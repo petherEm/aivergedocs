@@ -1,0 +1,162 @@
+export const metadata = {
+  title: 'Assistants API (OpenAI): Real-world simple example - money transfer online FAQ',
+  description:
+    'This API provides developers with sophisticated AI tools, enabling crafting bespoke AI assistants proficient in various tasks. This little tutorial tests the real-world scenario of how this solution would help on a larger scale. This is with Python client, but I plan to write a broader article on implementing it with the Next.js Full Stack product soon.',
+}
+
+# Assistants API (OpenAI): Real-world simple example - money transfer online FAQ
+
+The recent OpenAI Dev Day showcased a remarkable advancement in artificial intelligence, debuting a range of innovative AI services, including GPT-4 Turbo, and the cutting-edge Assistants API. {{ className: 'lead' }}
+
+This API provides developers with sophisticated AI tools, enabling crafting bespoke AI assistants proficient in various tasks. {{ className: 'lead' }}
+
+This little tutorial tests the real-world scenario of how this solution would help on a larger scale. This is with Python client, but I plan to write a broader article on implementing it with the Next.js Full Stack product soon. {{ className: 'lead' }}
+
+<Note>
+  You can read this also on Medium [here](https://medium.com/@pether.maciejewski/assistants-api-openai-real-world-simple-example-with-money-transfer-online-faq-31e5f8a9ca38).
+</Note>
+
+## Introduction
+
+The Assistants API facilitates the creation of AI assistants within our applications. It currently supports three main functionalities:
+
+- **Code Interpreter** 
+- **Information Retrieval**
+- **Functional Execution**
+
+
+
+You have the option to discover the functionalities of the Assistant API either through the Assistants playground or by crafting a detailed integration, as illustrated in my subsequent example. The overarching integration process involves these steps:
+
+
+1- Initiate an Assistant in the API, specifying its tailored instructions and selecting a model. Optionally, activate features such as Code Interpreter, Retrieval, and Function Calling. <br />
+2- Establish a Thread at the onset of a user conversation.<br />
+3- Append Messages to the Thread in response to user inquiries.<br />
+4 - Execute the Assistant on the Thread to generate a response, which seamlessly invokes the necessary tools.<br />
+
+## Setting up OPENAI client
+
+
+<CodeGroup>
+
+```python
+# you can use Jupyter Notebook
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
+import time
+
+```
+</CodeGroup>
+
+![AssistantAPI](/assistants-api/assist_1.png)
+
+## Setting the file upload for knowledge retrieval
+
+The Retrieval feature enhances the Assistant by integrating external knowledge sources, like unique product details or user-supplied documents. When a file is uploaded and delivered to the Assistant, OpenAI automatically segments your documents, indexes, and preserves the embeddings. It also employs vector search to find pertinent information that addresses user questions.
+
+For our demonstration, we’ll supply the assistant with a basic FAQ from Western Union’s online service (https://www.westernunion.com/pl/en/digitalbanking/frequently-asked-questions.html).
+
+
+<CodeGroup>
+
+```python
+file = client.files.create(
+  file=open("FAQWU.txt", "rb"),
+  purpose="assistants"
+)
+```
+</CodeGroup>
+
+
+![AssistantAPI](/assistants-api/assist_2.png)
+
+## Create Assistant
+
+Beginning with an Assistant involves simply selecting a model, but there’s room for further personalization. Utilize the instruction parameter to shape the Assistant’s character and establish its objectives.
+
+In our scenario, we employ the tools parameter **to equip the Assistant with retrieval capabilities**, allowing it to access our unique data. Finally, the file_ids parameter grants retrieval access to specific files. These files should be uploaded through the File Upload endpoint and tagged with ‘assistants’ as their purpose for compatibility with this API.
+
+<CodeGroup>
+
+```python
+assistant = client.beta.assistants.create(
+  name="WU Help Desk",
+  instruction="You are a customer support chatbot. Use your knowledge base to best respond to customer queries.",
+  tools=[{"type": "retrieval"}],
+  model="gpt-4-1106-preview",
+  file_ids=[file.id]
+)
+
+
+```
+</CodeGroup>
+
+![AssistantAPI](/assistants-api/assist_3.png)
+
+## Create a thread
+
+It’s advisable to establish a separate Thread for each user at the start of their conversation. Threads are unrestricted in size, allowing the addition of numerous Messages. The Assistant is designed to manage requests to the model within the maximum context window, employing efficient optimization methods like truncation as necessary.
+
+<CodeGroup>
+
+```python
+thread = client.beta.threads.create()
+```
+</CodeGroup>
+
+![AssistantAPI](/assistants-api/assist_4.png)
+
+
+## Create message and add message to a thread
+
+A Message contains text and in our case, a file.
+
+<CodeGroup>
+
+```python
+message = client.beta.threads.messages.create(
+  thread_id=thread.id,
+  role="user",
+  content="What are the available promotions?"
+  file_ids=[file.id]
+)
+```
+</CodeGroup>
+
+![AssistantAPI](/assistants-api/assist_5.png)
+
+
+## Run the assistant
+
+To enable the Assistant to reply to a user message, we initiate a Run. This process prompts the Assistant to review the Thread and determine whether to utilize tools (if activated) or rely solely on the model for the most appropriate response.
+
+Throughout the run, the assistant adds Messages to the thread marked with role=”assistant”. Additionally, the Assistant autonomously selects which previous Messages should be incorporated into the model’s context window.
+
+<CodeGroup>
+
+```python
+run = client.beta.threads.runs.create(
+  thread_id=thread.id,
+  assistant_id=assistant.id
+  instructions="Please address the user politely and provide the best possible response."
+)
+
+messages = client.beta.threads.messages.list(thread_id=thread.id)
+```
+</CodeGroup>
+
+![AssistantAPI](/assistants-api/assist_6.png)
+
+
+## View the response
+
+After a Run concludes, a duration influenced by the data input and prevailing API efficiency, we can examine the Messages the Assistant has appended to the Thread. These messages can then be presented to the user.
+
+In our case, the Assistant, having assimilated the Western Union FAQ, has furnished a reasonably accurate answer.
+
+![AssistantAPI](/assistants-api/assist_7.png)
+
+Happy coding :)
+
+Piotr

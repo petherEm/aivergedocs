@@ -1,0 +1,86 @@
+export const metadata = {
+  title: 'Central Limit Theorem',
+  description: 'Central Limit Theorem',
+}
+
+# What is the Central Limit Theorem?
+
+The **Central Limit Theorem (CLT)** is a powerful statistical tool that is useful in quantifying uncertainty around sample mean estimates.
+It is also the basis for common hypothesis tests, such as Z- and t-tests. A formal proof of the CLT requires some complex math, but this article will demonstrate it using a simulation. {{ className: "lead" }}
+
+Imagine that a data scientist wants to know the average hourly wage for all working US adults who make under 150 dollars per hour. This is a very large population - it would be **unrealistic** to collect wage data for every person meeting these criteria. Instead, suppose that the data scientist surveys a random sample of 150 people, records each person's hourly wage, and calculates a sample mean of 17.74 dollars per hour.
+
+**Here is the histogram of such sample with black dotted line at 17.74.**...
+
+A good data scientist knows that this sample mean is not EXACTLY the same as the population mean, but hope that it is **close enough.** The next question is:
+
+- How far from the population mean could this sample mean realistically be?
+
+To answer this, let's temporarily pretend that we are all-knowing and can actucally inspect the hourly wages of all people in the population of interests. Suppose that the true average wage is 18.84 dollars per hour and a histogram of the full population looks like this:
+
+....
+
+In real life, we usually only observe a single sample - but in order to quantify our uncertainty about that sample, it is useful to think about what WOULD happen if we could observe more.
+
+<Note>
+Consider the following thought experiment: Imagine that we could take some large number (say 10,000) random samples of 150 people from the population and calculate the mean hourly wage for each of those samples. We could then inspect the 10,000 sample means to see how much they vary. A large amount of variation would make us less confident that any individual sample mean is representative of the population; less variant would make us more confident.
+
+</Note>
+
+The Python code below does this in a loop. The **population** object is a list containing all wages in the full population. In each iteration of the loop, we do the following:
+
+- take a random sample of 150 wages from the population
+- store the sample mean in a list called `sample_means`
+
+Finally, after collecting 10,000 sample means, we can inspect them using a histogram.
+
+<CodeGroup>
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+
+sample_means = []
+
+for i in range(10000):
+    samp = random.sample(population, 150) # take a random sample of 150 wages
+    sample_means.append(np.mean(samp)) # store the sample mean
+
+plt.hist(sample_means, bins = 30)
+plt.vlines(np.mean(sample_means), 0, 1000, lw=3, linestyles='dashed')
+```
+
+</CodeGroup>
+
+Picture...
+
+There are a few interesting things to notice about this distribution, which is called **sampling distribution of the mean**:
+
+- Unlike the population distribution, which is very right-skewed, this distribution is (almost) normally distributed: symmetric with a single mode.
+
+- The average of the sample means (black dotted line) is approximately equal to the population mean (18.84).
+
+- The 10,000 sample means range approximately between 14 and 24 (plus or minus 5 dollars from the true mean)
+
+Specifically, the `NumPy percentile()` function can be used to calculate that 95% of the sample means from the above simulation fall in a range from 16.14 to 21.87 dollars per hour (plus or minus around 2.87 dollars from the mean)
+
+```python
+percentiles = np.percentile(sample_means, [2.5, 97.5])
+print(percentiles)
+# output: array([16.13810156, 21.87180969])
+```
+
+## Formally defining the CLT
+
+It's now time to formally define the CLT, which tells us that the sampling distribution of the mean:
+
+- is normally distributed (for large enough sample sizes)
+- is centered at the population mean
+- has standard deviation equal to the population standard deviation divided by the square root of the sample size. This is called **standard error**.
+
+With respect to the standard error formula described above, note that there are two levers on the width of the sampling distribution:
+
+- **The population standard deviation**. Populations with more variation will yield sample means with more variation. For example, imagine sampling the heights of 5 year olds compared to sampling heights of 5-18 year olds. There is more variation in the heights of 5-18 year olds, so there will be more variation in individual samples.
+
+- **The sample size**. The larger the sample size, the smaller the variation in repeated sample means. In the wage example above, imagine sampling only 5 people instead of 150. Those five sampled people could include one outlier that throws the whole sample mean off. If we sample 150 (or even more) people, we're more likely to have high and low outliers that cancel each other out.

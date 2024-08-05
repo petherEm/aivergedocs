@@ -1,0 +1,409 @@
+import Image from 'next/image'
+
+export const metadata = {
+  title: 'P24 direct integration with Next.js 14 (no library)',
+  description:
+    'P24 (Przelewy24) is recognized as a domestic payment institution in Poland, providing a spectrum of payment services, including authorization and clearing mechanisms. To leverage the Przelewy24 API, merchants must first establish an account in the P24 Administration Panel.',
+}
+
+# No library P24 integration with Next.js 14
+
+<br />
+
+Creating a **[Przelewy24](https://developers.przelewy24.pl/index.php?en=)** payment request without relying on external payment
+libraries is an intriguing challenge that can offer deeper insights into the payment
+process and greater control over the integration. Here, we will walk you through
+the process of building the API with **Next.js 14**, a popular React framework for
+building web applications. {{ className: 'lead' }}
+
+In case you would like to have a look into [the repo](https://github.com/petherEm/WUAIPAY).
+
+**P24 - [Przelewy24](https://developers.przelewy24.pl/index.php?en=)** is recognized as a domestic payment institution in Poland, providing a spectrum of payment services, including authorization and clearing mechanisms. To leverage the Przelewy24 API, merchants must first establish an account in the P24 Administration Panel. This registration process unlocks various tools for merchants, such as the ability to oversee their account balance, monitor client payments, and handle refunds.{{ className: 'lead' }}
+
+## Step 1: Setting Up Your Next.js application
+
+**Here is my code repo for the below example**, but you can start with your own project:
+
+```bash
+npx create-next-app@latest my-p24-app
+cd my-p24-app
+```
+
+## Step 2: Implementing the Payment API
+
+In your Next.js application, you will need to handle requests for creating P24 transactions. Here is how you can do it:
+
+Import necessary modules:
+
+```tsx
+import { NextResponse } from 'next/server'
+import crypto from 'crypto'
+import axios from 'axios'
+```
+
+These imports include **"NextResponse** for sending responses, **crypto** for generating secure hashes, and **axios** for making HTTP requests.
+
+Define CORS headers:
+
+```tsx
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+```
+
+These headers enable Cross-Origin Resource Sharing (CORS), allowing your API to be called from other domains.
+
+Create a Utility Function for **SHA-384 Hash (required by P24)**
+
+```tsx
+function calculateSHA384(data) {
+  const hash = crypto.createHash('sha384')
+  hash.update(data)
+  return hash.digest('hex')
+}
+```
+
+This function calculates the SHA-384 hash of a given data string, which is required for signing requests to P24.
+
+Define the **P24 Class**
+
+```tsx
+// Define P24 class to mimic the behavior of the library
+class P24 {
+  constructor(posId, apiKey, crcKey, merchantId, options = { sandbox: true }) {
+    this.posId = posId
+    this.apiKey = apiKey
+    this.crcKey = crcKey
+    this.merchantId = merchantId
+    this.options = options
+    this.client = axios.create({
+      baseURL: 'https://sandbox.przelewy24.pl/api/v1', // Update with proper base URL
+      auth: {
+        username: posId.toString(),
+        password: apiKey,
+      },
+    })
+  }
+
+  // Method to create transaction
+  async createTransaction(order) {
+    try {
+      const hashData = {
+        sessionId: order.sessionId,
+        merchantId: this.merchantId,
+        amount: order.amount,
+        currency: order.currency,
+        crc: this.crcKey,
+      }
+      const sign = calculateSHA384(JSON.stringify(hashData))
+      const orderData = {
+        ...order,
+        posId: this.posId,
+        sign: sign,
+      }
+      const response = await this.client.post(
+        '/transaction/register',
+        orderData,
+      )
+      console.log(response.data.data.token)
+      return {
+        token: response.data.data.token,
+      }
+    } catch (error) {
+      console.error(error)
+      throw new Error('Failed to create transaction')
+    }
+  }
+}
+```
+
+The **P24 class** encapsulates the functionality for creating transactions, including initializing with API credentials and the method for registering transactions with P24.
+
+Handling **OPTIONS** and **POST** Requests
+
+```tsx
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
+export async function POST(req) {
+  // Handle POST requests to create a transaction
+}
+```
+
+These functions handle HTTP OPTIONS and POST requests, enabling CORS and processing payment transactions, respectively.
+
+## Step 3: Process the Payment Request
+
+In the **POST** method, extract the necessary parameters from the request body, instantiate the P24 class with your P24 credentials, and call createTransaction with the order details. Handle errors appropriately and return the transaction result to the client.
+
+A crucial aspect of this setup is the generation of **sessionID**, which should be uniquely crafted according to the merchant's own logic. This ID is essential for tracking transactions, validating them, and managing refunds.
+
+An example code of the **POST** method is as follows:
+**/api/p24/route.ts**
+
+```tsx
+export async function POST(req) {
+  const body = await req.json()
+
+  const { randomSessionId, amount } = body
+  console.log(randomSessionId, amount)
+
+  const merchantId = 213883
+  const posId = process.env.PRZELEWY24_POS_ID
+  const crcKey = process.env.PRZELEWY24_CRC_KEY
+  const apiKey = process.env.PRZELEWY24_CRC_API_KEY
+
+  if (req.method === 'POST') {
+    try {
+      const p24 = new P24(posId, apiKey, crcKey, merchantId) // Create instance of P24 class
+
+      // Create order object
+      const order = {
+        merchantId: merchantId,
+        sessionId: 'xxx12124',
+        amount: amount * 100,
+        currency: 'PLN',
+        description: 'test order',
+        email: 'john.doe@example.com',
+        channel: 8192,
+        country: 'PL',
+        language: 'pl',
+        urlReturn: 'http://localhost:3000',
+        urlStatus: 'http://localhost:3000',
+        timeLimit: 20,
+        encoding: 'UTF-8',
+      }
+
+      // Create transaction using the library method
+      const transactionResult = await p24.createTransaction(order)
+
+      // Send the response back to the client
+      return NextResponse.json(transactionResult, { headers: corsHeaders })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json(
+        { error: 'Internal Server Error' },
+        { headers: corsHeaders, status: 500 },
+      )
+    }
+  } else {
+    return NextResponse.json(
+      { error: 'Method Not Allowed' },
+      { headers: corsHeaders, status: 405 },
+    )
+  }
+}
+```
+
+and the full code of the **/api/p24/route.ts** file:
+
+```tsx
+import { NextResponse } from 'next/server'
+import crypto from 'crypto'
+import axios from 'axios'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+// Function to calculate SHA-384 hash
+function calculateSHA384(data) {
+  const hash = crypto.createHash('sha384')
+  hash.update(data)
+  return hash.digest('hex')
+}
+
+// Define P24 class to mimic the behavior of the library
+class P24 {
+  constructor(posId, apiKey, crcKey, merchantId, options = { sandbox: true }) {
+    this.posId = posId
+    this.apiKey = apiKey
+    this.crcKey = crcKey
+    this.merchantId = merchantId
+    this.options = options
+    this.client = axios.create({
+      baseURL: 'https://sandbox.przelewy24.pl/api/v1', // Update with proper base URL
+      auth: {
+        username: posId.toString(),
+        password: apiKey,
+      },
+    })
+  }
+
+  // Method to create transaction
+  async createTransaction(order) {
+    try {
+      const hashData = {
+        sessionId: order.sessionId,
+        merchantId: this.merchantId,
+        amount: order.amount,
+        currency: order.currency,
+        crc: this.crcKey,
+      }
+      const sign = calculateSHA384(JSON.stringify(hashData))
+      const orderData = {
+        ...order,
+        posId: this.posId,
+        sign: sign,
+      }
+      const response = await this.client.post(
+        '/transaction/register',
+        orderData,
+      )
+      console.log(response.data.data.token)
+      return {
+        token: response.data.data.token,
+      }
+    } catch (error) {
+      console.error(error)
+      throw new Error('Failed to create transaction')
+    }
+  }
+}
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
+export async function POST(req) {
+  const body = await req.json()
+
+  const { randomSessionId, amount } = body
+  console.log(randomSessionId, amount)
+
+  const merchantId = 213883
+  const posId = process.env.PRZELEWY24_POS_ID
+  const crcKey = process.env.PRZELEWY24_CRC_KEY
+  const apiKey = process.env.PRZELEWY24_CRC_API_KEY
+
+  if (req.method === 'POST') {
+    try {
+      const p24 = new P24(posId, apiKey, crcKey, merchantId) // Create instance of P24 class
+
+      // Create order object
+      const order = {
+        merchantId: merchantId,
+        sessionId: 'xxx12124',
+        amount: amount * 100,
+        currency: 'PLN',
+        description: 'test order',
+        email: 'john.doe@example.com',
+        channel: 8192,
+        country: 'PL',
+        language: 'pl',
+        urlReturn: 'http://localhost:3000',
+        urlStatus: 'http://localhost:3000',
+        timeLimit: 20,
+        encoding: 'UTF-8',
+      }
+
+      // Create transaction using the library method
+      const transactionResult = await p24.createTransaction(order)
+
+      // Send the response back to the client
+      return NextResponse.json(transactionResult, { headers: corsHeaders })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json(
+        { error: 'Internal Server Error' },
+        { headers: corsHeaders, status: 500 },
+      )
+    }
+  } else {
+    return NextResponse.json(
+      { error: 'Method Not Allowed' },
+      { headers: corsHeaders, status: 405 },
+    )
+  }
+}
+```
+
+and here is the example of the **onClick** trigger on the client side:
+
+```tsx
+const onP24Checkout = async () => {
+  try {
+    fetch('/api/p24checkout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: fundsInAmount,
+        randomSessionId: Math.floor(Math.random() * 1000000),
+        /* Your order details */
+      }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        // Redirect the user to the payment URL
+        if (data.paymentUrl) {
+          window.location.href = data.paymentUrl
+        } else {
+          console.error('Payment URL not received')
+        }
+      })
+      .catch((error) => {
+        console.error('Error:', error)
+        // Handle the error
+      })
+  } catch (error) {
+    console.log(error)
+  }
+}
+```
+
+## Step 4: Testing Your Integration
+
+Before going live, test your integration thoroughly using the P24 sandbox environment. Ensure that transactions are created successfully and that the payment process works as expected.
+
+## Step 5: Payment Methods retrival
+
+Here is a code snippet as 'server action' in Next.js 14 to get tha available payment methods from P24 API:
+
+**/lib/actioins/getPMethods.action.js**
+
+```tsx
+'use server'
+
+import { NextResponse } from 'next/server'
+import axios from 'axios'
+
+export const getPaymentMethods = async () => {
+  const posId = process.env.PRZELEWY24_POS_ID
+  const apiKey = process.env.PRZELEWY24_CRC_API_KEY
+
+  try {
+    const response = await axios.get(
+      'https://sandbox.przelewy24.pl/api/v1/payment/methods/pl?amount=150&currency=PLN',
+      {
+        auth: {
+          username: posId,
+          password: apiKey,
+        },
+      },
+    )
+
+    return response
+  } catch (error) {
+    console.error(error)
+
+    return NextResponse.error({ error: 'Internal Server Error' })
+  }
+}
+```
+
+## Conclusion
+
+Integrating P24 payment requests directly in a Next.js application without using payment libraries offers flexibility and a deeper understanding of the payment process. This approach requires careful handling of credentials, secure generation of signatures, and proper error handling to ensure a smooth payment experience for users.
+
+Remember, when dealing with financial transactions, security and reliability are paramount. Always encrypt sensitive information, validate input data, and test your integration thoroughly to ensure a secure and efficient payment process.
+
+Happy coding :)
+
+Piotr

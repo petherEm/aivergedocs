@@ -1,0 +1,313 @@
+import Image from 'next/image'
+
+export const metadata = {
+  title: 'P24 - Payment Gateway integration with useShoppingCart',
+  description:
+    'P24 (Przelewy24) is recognized as a domestic payment institution in Poland, providing a spectrum of payment services, including authorization and clearing mechanisms. To leverage the Przelewy24 API, merchants must first establish an account in the P24 Administration Panel.',
+}
+
+# A quick introduction to Next.js 14 and P24 (Przelewy24)
+
+<br />
+**Vercel** recently marked a milestone at its fourth annual conference by introducing
+**Next.js 14**. This new iteration of the highly respected React framework stands
+out with its promise of increased speed and user-friendliness for developers. Next.js
+has been celebrated for its capabilities in server-side rendering (SSR), static site
+generation (SSG), and incremental static regeneration (ISR), making it a preferred
+choice for crafting dynamic, high-performance web applications.{{
+  className: 'lead',
+}}
+
+On the financial technology front, **P24 - [Przelewy24](https://developers.przelewy24.pl/index.php?en=)** is recognized as a domestic payment institution in Poland, providing a spectrum of payment services, including authorization and clearing mechanisms. To leverage the Przelewy24 API, merchants must first establish an account in the P24 Administration Panel. This registration process unlocks various tools for merchants, such as the ability to oversee their account balance, monitor client payments, and handle refunds.{{ className: 'lead' }}
+
+## 1 - Implementing ShoppingCartModal with Przelewy24 integration
+
+This section explores the ShoppingCartModal component, where the payment processes are triggered. This component utilizes the **useShoppingCart** hook, initially developed for **Stripe** payments. However, it's equally effective in managing the shopping cart state across the app. The [useShoppingCart](https://useshoppingcart.com/docs/) hook's straightforward documentation can be a valuable resource for understanding its implementation.
+
+<CodeGroup>
+
+```jsx
+"use client";
+
+import axios from "axios";
+import { toast } from "react-hot-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+import Image from "next/image";
+
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useShoppingCart, formatCurrencyString } from "use-shopping-cart";
+
+const ShoppingCartModal = () => {
+  const {
+    cartCount,
+    shouldDisplayCart,
+    handleCartClick,
+    cartDetails,
+    removeItem,
+    totalPrice,
+  } = useShoppingCart();
+
+  //console.log(cartDetails);
+  const items = Object.values(cartDetails ?? {}).map((entry) => entry.price_id);
+
+
+  const onCheckout = async () => {
+    console.log(totalPrice);
+    try {
+      const response = await axios.post("/api/checkout", {
+        amount: totalPrice, // Assuming '3232424' is your amount (as a number, not a string)
+      });
+
+      console.log(response.data);
+
+      if (response.data.paymentUrl) {
+        toast.success("Redirecting to payment...");
+        window.location.href = response.data.paymentUrl; // Redirect to the payment URL
+      } else {
+        toast.error("Payment URL not received");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error during checkout");
+    }
+  };
+
+  return (
+    <>
+      <Sheet open={shouldDisplayCart} onOpenChange={() => handleCartClick()}>
+        <SheetContent className="sm:max-w-lg w-[90vw]">
+          <SheetHeader>
+            <SheetTitle>Cart</SheetTitle>
+          </SheetHeader>
+
+          <div className="h-full flex flex-col justify-between">
+            <div className="mt-8 flex-1 overflow-y-auto">
+              <ul className="-my-6 divide-y divide-gray-200">
+                {cartCount === 0 ? (
+                  <h1 className="py-6">You do not have any items</h1>
+                ) : (
+                  <>
+                    {Object.values(cartDetails ?? {}).map((entry) => (
+                      <li key={entry.id} className="flex py-6 ">
+                        <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-gray-200">
+                          <Image
+                            src={entry.image as string}
+                            alt="Product Image"
+                            width={100}
+                            height={100}
+                          />
+                        </div>
+
+                        <div className="ml-4 flex flex-1 flex-col">
+                          <div>
+                            <div className="flex justify-between text-base font-medium text-gray-900">
+                              <h3>{entry.name}</h3>
+                              <p className="ml-4">{entry.price} PLN</p>
+                              <p className="mt-1 text-sm text-gray-500 line-clamp-2">
+                                {entry.description}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-1 items-end justify-between text-sm">
+                              <p className="text-gray-500">
+                                QTY: {entry.quantity}
+                              </p>
+
+                              <div className="flex">
+                                <button
+                                  onClick={() => removeItem(entry.id)}
+                                  type="button"
+                                  className="font-medium text-primary hover:text-primary/80"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </>
+                )}
+              </ul>
+            </div>
+            <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
+              <div className="flex justify-between text-base font-medium text-gray-900">
+                <p>Subtotal</p>
+                <p>{totalPrice} PLN</p>
+              </div>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Shipping and taxes are calculated at checkout
+              </p>
+
+              <div className="mt-6">
+                <Button
+                  onClick={onCheckout}
+                  className="w-full bg-black text-white"
+                >
+                  Pay with P24
+                </Button>
+              </div>
+              <div className="mt-6 flex justify-center text-center text-sm text-gray-500">
+                <Button className="w-full mt-4">Continue shopping</Button>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+};
+
+export default ShoppingCartModal;
+```
+
+</CodeGroup>
+
+## 2 - Crafting the API Endpoint for Przelewy24 Transactions
+
+In this part, we explore constructing an **API endpoint specifically designed to process orders for P24 (Przelewy24).** For this purpose, we will utilize an efficient wrapper from [@ingameltd/node-przelewy24](https://www.npmjs.com/package/@ingameltd/node-przelewy24) package, which greatly simplifies creating and verifying P24 transactions. Kudos to the team for developing such a user-friendly library.
+
+Below is the core code for the API endpoint **(api/checkout/route.ts):**
+
+<CodeGroup>
+
+```jsx
+import { NextResponse } from "next/server";
+
+import {
+  P24,
+  Order,
+  Currency,
+  Country,
+  Language,
+  NotificationRequest,
+  Verification,
+  Encoding,
+} from '@ingameltd/node-przelewy24'
+
+const corsHeaders = {
+"Access-Control-Allow-Origin": "\*",
+"Access-Control-Allow-Methods": "POST, GET, PUT, DELETE, OPTIONS",
+"Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+const merchantId = 442323; // you will get it once registered with P24
+const posId = process.env.PRZELEWY24_POS_ID;
+const crcKey = process.env.PRZELEWY24_CRC_KEY;
+const apiKey = process.env.PRZELEWY24_API_KEY;
+// Initialize P24 with your credentials and sandbox mode
+
+//@ts-ignore
+const p24 = new P24(merchantId, posId, apiKey, crcKey, { sandbox: true });
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
+export async function POST(req: Request) {
+  if (req.method === "POST") {
+    try {
+      const body = await req.json();
+      const { amount } = body;
+      console.log(amount);
+
+      const order: Order = {
+        sessionId: "youneedyourownlogictocreatesessionids",
+        amount: amount * 100,
+        currency: Currency.PLN,
+        description: "test order",
+        email: "john.doe@example.com",
+        country: Country.Poland,
+        language: Language.PL,
+        channel: "8192",
+        urlReturn: "http://localhost:3000/nowosci",
+        urlStatus: "http://localhost:3000",
+        timeLimit: 20,
+        encoding: Encoding.UTF8,
+      };
+
+      const transactionResult = await p24.createTransaction(order);
+      console.log(transactionResult);
+
+      // Send the payment URL back to the client
+
+      return NextResponse.json(
+        { paymentUrl: transactionResult.link },
+
+        { headers: corsHeaders }
+      );
+    } catch (error) {
+      console.error(error);
+
+      return NextResponse.json(
+        { error: "Internal Server Error" },
+        { headers: corsHeaders }
+      );
+    }
+
+  } else {
+    return NextResponse.json(
+      { error: "Method Not Allowed" },
+      { headers: corsHeaders }
+    );
+  }
+}
+
+```
+
+</CodeGroup>
+
+This setup involves initializing the P24 client with the necessary credentials and configuring it for sandbox testing. The POST function handles order requests, creating transactions via Przelewy24, and returns a payment URL to the client. **A crucial aspect of this setup is the generation of sessionID, which should be uniquely crafted according to the merchant's own logic.** This ID is essential for tracking transactions, validating them, and managing refunds.
+
+**"The Channel"** property in the Przelewy24 (P24) API plays a crucial role in specifying the available payment methods for a transaction. According to the P24 documentation, the 'channel' is an integer that represents different payment methods, each denoted by specific enum values:
+
+- **1** - Card payments, including ApplePay and GooglePay
+- **2** - Bank transfers
+- **4** - Traditional transfers
+- **16** - Enables all 24/7 payment methods
+- **32** - Use pre-payment
+- **64** - Pay-by-link methods only
+- **128** - Instalment payment forms
+- **256** - Wallets
+- **4096** - Card only
+- **8192** - BLIK
+- **16384** - All methods except BLIK
+
+To enable multiple payment channels, sum up their corresponding values. For instance, to allow both transfers and traditional transfer methods, set **channel** to 6 (2 + 4).
+
+Here's an example of how the "channel" property is implemented in an order configuration:
+
+<CodeGroup>
+```jsx 
+const order: Order = {
+        sessionId: "youneedyourownlogictocreatesessionids",
+        amount: amount * 100,
+        currency: Currency.PLN,
+        description: "test order",
+        email: "good.boy@example.com",
+        country: Country.Poland,
+        language: Language.PL,
+        channel: "8192",
+        urlReturn: "http://localhost:3000/success",
+        urlStatus: "http://localhost:3000/status",
+        timeLimit: 20,
+        encoding: Encoding.UTF8,
+      };
+```
+</CodeGroup>
+
+While on **sandbox**, we should be redirected to the following:
+
+https://sandbox-go.przelewy24.pl/trnRequest/{token} where the token is granted by P24 based on the approved order.
+
+Happy coding :)
+
+Piotr
